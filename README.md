@@ -1,1 +1,1 @@
-OVAC-2026-MERN-Full-Stack
+JOVAC-2026-MERN-Full-Stack
