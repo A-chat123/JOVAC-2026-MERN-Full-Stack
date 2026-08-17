@@ -1,10 +1,13 @@
 import { useState, useRef } from "react";
-
-const MOODS = ["neutral","happy","sad","angry"];
+import { MOODS } from "../constants/moods";
 
 // Reads VITE_API_URL from Frontend/.env — change it there if your backend runs elsewhere
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const ENDPOINT = `${API_URL}/app/song`;
+
+// Must match ADMIN_KEY set in Backend/.env. If the backend has no ADMIN_KEY
+// configured, this is ignored server-side and any value (including blank) works.
+const ADMIN_KEY = import.meta.env.VITE_ADMIN_KEY || "";
 
 export default function Admin() {
   const [title, setTitle] = useState("");
@@ -36,15 +39,22 @@ export default function Admin() {
     fd.append("title", title.trim());
     fd.append("artist", artist.trim());
     fd.append("mood", mood);
-    fd.append("audioFile", file); // multer side: upload.single("song")
+    fd.append("audioFile", file); // multer side: upload.array("audioFile")
 
     try {
       setLoading(true);
       // NOTE: koi 'Content-Type' header mat set karo — browser khud
       // multipart boundary laga dega. Manually set kiya to backend break hoga.
-      const res = await fetch(ENDPOINT, { method: "POST", body: fd });
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "x-admin-key": ADMIN_KEY },
+        body: fd
+      });
 
       if (!res.ok) {
+        if (res.status === 401) {
+          throw new Error("Unauthorized: missing or invalid admin key. Set VITE_ADMIN_KEY in Frontend/.env.");
+        }
         const text = await res.text().catch(() => "");
         throw new Error(`Server ${res.status}: ${text || "upload failed"}`);
       }

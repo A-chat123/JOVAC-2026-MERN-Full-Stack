@@ -2,12 +2,15 @@ import React, { useEffect, useRef, useState } from "react";
 import * as faceapi from "face-api.js";
 import { motion } from "framer-motion";
 import { Pause, Play } from "lucide-react";
+import { MOODS } from "../constants/moods";
 
 export default function FacialExpression() {
   const videoRef = useRef();
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [expression, setExpression] = useState("Not detected");
   const [songs, setSongs] = useState([]);
+  const [cameraError, setCameraError] = useState(null);
+  const [noFaceDetected, setNoFaceDetected] = useState(false);
 
   // Reads VITE_API_URL from Frontend/.env — change it there if your backend runs elsewhere
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -26,7 +29,7 @@ export default function FacialExpression() {
     fetchSongs();
   }, []);
 
-  const filterSongs = songs.filter((el) => el.mood == expression);
+  const filterSongs = songs.filter((el) => el.mood === expression);
 
   useEffect(() => {
     const loadModels = async () => {
@@ -37,24 +40,52 @@ export default function FacialExpression() {
       startVideo();
     };
     const startVideo = () => {
-      navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
-        videoRef.current.srcObject = stream;
-      });
+      navigator.mediaDevices
+        .getUserMedia({ video: true })
+        .then((stream) => {
+          if (videoRef.current) videoRef.current.srcObject = stream;
+        })
+        .catch((err) => {
+          console.error("Camera access failed:", err);
+          setCameraError(
+            err.name === "NotAllowedError"
+              ? "Camera permission denied. Please allow camera access and reload the page."
+              : "Could not access the camera. Make sure a camera is connected and not in use by another app."
+          );
+        });
     };
     loadModels();
   }, []);
+
+  // face-api.js can detect more expressions than we have moods for
+  // (fearful, disgusted, surprised). Map those to the closest mood we
+  // actually have songs for, instead of silently returning an empty list.
+  const EXPRESSION_TO_MOOD = {
+    fearful: "sad",
+    disgusted: "angry",
+    surprised: "happy"
+  };
 
   const handleClick = async () => {
     if (!modelsLoaded) return;
     const detection = await faceapi
       .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
       .withFaceExpressions();
-    if (detection) {
-      const sorted = Object.entries(detection.expressions).sort(
-        (a, b) => b[1] - a[1]
-      );
-      setExpression(sorted[0][0]);
+
+    if (!detection) {
+      setNoFaceDetected(true);
+      return;
     }
+
+    setNoFaceDetected(false);
+    const sorted = Object.entries(detection.expressions).sort(
+      (a, b) => b[1] - a[1]
+    );
+    const topExpression = sorted[0][0];
+    const mappedMood = MOODS.includes(topExpression)
+      ? topExpression
+      : EXPRESSION_TO_MOOD[topExpression] || "neutral";
+    setExpression(mappedMood);
   };
 
   // ---- SINGLE audio element ke liye ----
@@ -89,15 +120,21 @@ export default function FacialExpression() {
       </motion.header>
 
       <div className="flex gap-12 items-center">
-        <motion.video
-          ref={videoRef}
-          autoPlay
-          muted
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
-          className="w-[320px] h-[240px] rounded-xl object-cover shadow-md"
-        />
+        {cameraError ? (
+          <div className="w-[320px] h-[240px] rounded-xl bg-red-50 border border-red-200 flex items-center justify-center text-center text-sm text-red-600 p-4">
+            {cameraError}
+          </div>
+        ) : (
+          <motion.video
+            ref={videoRef}
+            autoPlay
+            muted
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5 }}
+            className="w-[320px] h-[240px] rounded-xl object-cover shadow-md"
+          />
+        )}
 
         <motion.div
           initial={{ opacity: 0, x: 40 }}
@@ -115,14 +152,20 @@ export default function FacialExpression() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={handleClick}
-            className="bg-purple-600 text-white px-6 py-2 rounded-full shadow-md"
+            disabled={!modelsLoaded || !!cameraError}
+            className="bg-purple-600 text-white px-6 py-2 rounded-full shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Start Listening
+            {modelsLoaded ? "Start Listening" : "Loading models…"}
           </motion.button>
 
           <p className="mt-3 text-sm text-gray-700">
             <span className="font-semibold">Detected Mood:</span> {expression}
           </p>
+          {noFaceDetected && (
+            <p className="mt-1 text-sm text-red-600">
+              No face detected — make sure your face is visible and try again.
+            </p>
+          )}
         </motion.div>
       </div>
 
@@ -133,6 +176,14 @@ export default function FacialExpression() {
         className="mt-12 max-w-3xl"
       >
         <h3 className="text-xl font-semibold mb-4">Recommended Tracks</h3>
+
+        {filterSongs.length === 0 && (
+          <p className="text-sm text-gray-500 mb-4">
+            {songs.length === 0
+              ? "No songs available yet — ask an admin to upload some at /wp-admin."
+              : `No songs tagged "${expression}" yet. Try detecting your mood again or ask an admin to add more songs.`}
+          </p>
+        )}
 
         <div className="space-y-3">
           {filterSongs.map((song) => {

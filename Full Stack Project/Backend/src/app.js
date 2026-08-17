@@ -5,8 +5,21 @@ const songRouter = require("./routes/songs.routes");
 
 const app = express();
 
+// FRONTEND_URL can be a single origin or a comma-separated list
+// (e.g. "http://localhost:5173,https://myapp.vercel.app")
+const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
 app.use(cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173"
+    origin: (origin, callback) => {
+        // Allow non-browser requests (no Origin header, e.g. curl/Postman)
+        if (!origin || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        callback(new Error(`CORS: origin "${origin}" is not allowed`));
+    }
 }));
 app.use(express.json());
 

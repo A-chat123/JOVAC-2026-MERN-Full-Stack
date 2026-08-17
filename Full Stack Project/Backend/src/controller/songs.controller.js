@@ -1,5 +1,6 @@
 const { saveFile } = require("../storage/song.storage");
 const songModel = require("../model/songs.model");
+const MOODS = require("../constants/moods");
 
 const createSong = async (req, res) => {
     try {
@@ -9,6 +10,12 @@ const createSong = async (req, res) => {
         if (!title || !artist || !mood || !files || files.length === 0) {
             return res.status(400).json({
                 message: "title, artist, mood and at least one audioFile are required"
+            });
+        }
+
+        if (!MOODS.includes(mood)) {
+            return res.status(400).json({
+                message: `Invalid mood "${mood}". Must be one of: ${MOODS.join(", ")}`
             });
         }
 
